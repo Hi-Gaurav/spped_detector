@@ -6,6 +6,7 @@ Takes MP4 video as input and tracks vehicles in real-time using YOLOv8
 
 import cv2
 import argparse
+import json
 from ultralytics import YOLO
 
 
