@@ -11,15 +11,19 @@ from ultralytics import YOLO
 
 
 def main():
+    # Load configuration
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+
     # Set up command line arguments
     parser = argparse.ArgumentParser(
         description='Vehicle Tracking with YOLOv8')
     parser.add_argument('--video', type=str, required=True,
                         help='Path to input MP4 video file')
-    parser.add_argument('--model', type=str, default='yolov8n.pt',
-                        help='YOLOv8 model (default: yolov8n.pt)')
-    parser.add_argument('--conf', type=float, default=0.5,
-                        help='Confidence threshold (default: 0.5)')
+    parser.add_argument('--model', type=str, default=config['model'],
+                        help=f'YOLOv8 model (default: {config["model"]})')
+    parser.add_argument('--conf', type=float, default=config['confidence'],
+                        help=f'Confidence threshold (default: {config["confidence"]})')
     args = parser.parse_args()
 
     # Load YOLOv8 model
@@ -41,8 +45,8 @@ def main():
     print(f"Video: {width}x{height} at {fps} FPS, {total_frames} frames")
     print("Press 'q' to quit")
 
-    # Vehicle classes from COCO dataset
-    vehicle_classes = [2, 3, 5, 7]  # car, motorcycle, bus, truck
+    # Vehicle classes from config
+    vehicle_classes = config['vehicle_classes']
 
     frame_count = 0
 
@@ -70,29 +74,30 @@ def main():
             classes = results[0].boxes.cls.cpu().numpy().astype(int)
             confs = results[0].boxes.conf.cpu().numpy()
 
-            # Class names
-            class_names = {2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck'}
+            # Class names from config
+            class_names = {int(k): v for k, v in config['class_names'].items()}
 
             # Draw tracking results
             for i, (box, track_id, cls, conf) in enumerate(zip(boxes, track_ids, classes, confs)):
                 x1, y1, x2, y2 = map(int, box)
 
                 # Draw bounding box
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.rectangle(frame, (x1, y1), (x2, y2),
+                              config['display']['box_color'], 2)
 
                 # Draw label with track ID
                 label = f"{class_names.get(cls, 'vehicle')} ID:{track_id} {conf:.2f}"
                 label_size = cv2.getTextSize(
-                    label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                    label, cv2.FONT_HERSHEY_SIMPLEX, config['display']['font_scale'], config['display']['font_thickness'])[0]
                 cv2.rectangle(frame, (x1, y1 - label_size[1] - 10),
-                              (x1 + label_size[0], y1), (0, 255, 0), -1)
+                              (x1 + label_size[0], y1), config['display']['box_color'], -1)
                 cv2.putText(frame, label, (x1, y1 - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, config['display']['font_scale'], (0, 0, 0), config['display']['font_thickness'])
 
         # Add frame info
         info_text = f"Frame: {frame_count}/{total_frames}"
         cv2.putText(frame, info_text, (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, config['display']['info_font_scale'], (255, 255, 255), 2)
 
         # Display frame
         cv2.imshow('Vehicle Tracking', frame)
