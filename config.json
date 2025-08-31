@@ -1,6 +1,7 @@
 {
-  "model": "yolo11m.pt",
-  "confidence": 0.5,
+  "model": "yolo12m.pt",
+  "confidence": 0.6,
+  "speed_limit": 10,
   "vehicle_classes": [2, 3, 5, 7],
   "class_names": {
     "2": "car",
@@ -15,8 +16,14 @@
     "info_font_scale": 1
   },
   "speed_detection": {
-    "line1_position": 0.3,
+    "line1_position": 0.4,
     "line2_position": 0.7,
-    "distance_meters": 10
+    "distance_meters": 8
+  },
+  "violation_logging": {
+    "log_violations": true,
+    "log_file": "violations.csv",
+    "screenshot_violations": true,
+    "screenshot_folder": "violation_screenshots"
   }
 }

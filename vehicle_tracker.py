@@ -8,7 +8,50 @@ import cv2
 import argparse
 import json
 import time
+import csv
+import os
+from datetime import datetime
 from ultralytics import YOLO
+
+
+def log_violation(vehicle_id, speed_kmh, speed_limit, timestamp, frame_count, config):
+    """Log speed violation to CSV file"""
+    if not config['violation_logging']['log_violations']:
+        return
+
+    violation_file = config['violation_logging']['log_file']
+    file_exists = os.path.isfile(violation_file)
+
+    with open(violation_file, 'a', newline='') as csvfile:
+        fieldnames = ['timestamp', 'vehicle_id', 'speed_kmh',
+                      'speed_limit', 'violation_amount', 'frame_count']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow({
+            'timestamp': timestamp,
+            'vehicle_id': vehicle_id,
+            'speed_kmh': round(speed_kmh, 1),
+            'speed_limit': speed_limit,
+            'violation_amount': round(speed_kmh - speed_limit, 1),
+            'frame_count': frame_count
+        })
+
+
+def save_violation_screenshot(frame, vehicle_id, speed_kmh, timestamp, config):
+    """Save screenshot of violation"""
+    if not config['violation_logging']['screenshot_violations']:
+        return
+
+    screenshot_dir = config['violation_logging']['screenshot_folder']
+    if not os.path.exists(screenshot_dir):
+        os.makedirs(screenshot_dir)
+
+    filename = f"violation_{vehicle_id}_{timestamp.replace(':', '-').replace(' ', '_')}.jpg"
+    filepath = os.path.join(screenshot_dir, filename)
+    cv2.imwrite(filepath, frame)
 
 
 def main():
@@ -44,6 +87,7 @@ def main():
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     print(f"Video: {width}x{height} at {fps} FPS, {total_frames} frames")
+    print(f"Speed limit: {config['speed_limit']} km/h")
     print("Press 'q' to quit")
 
     # Vehicle classes from config
@@ -53,6 +97,7 @@ def main():
     line1_y = int(height * config['speed_detection']['line1_position'])
     line2_y = int(height * config['speed_detection']['line2_position'])
     distance_meters = config['speed_detection']['distance_meters']
+    speed_limit = config['speed_limit']
 
     # DEBUG: Print line positions
     print(
@@ -150,6 +195,16 @@ def main():
                             print(
                                 f"DEBUG: Vehicle {track_id} speed calculated: {speed_kmh:.1f} km/h")
 
+                            # Check for speed violation and log
+                            if speed_kmh > speed_limit:
+                                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                log_violation(
+                                    track_id, speed_kmh, speed_limit, timestamp, frame_count, config)
+                                save_violation_screenshot(
+                                    frame, track_id, speed_kmh, timestamp, config)
+                                print(
+                                    f"VIOLATION: Vehicle {track_id} speeding at {speed_kmh:.1f} km/h (limit: {speed_limit} km/h)")
+
                 elif vehicle_times[track_id]['direction'] == 'reverse':
                     if line1_crossed and 'line1_time' not in vehicle_times[track_id]:
                         vehicle_times[track_id]['line1_time'] = current_time
@@ -166,22 +221,35 @@ def main():
                             print(
                                 f"DEBUG: Vehicle {track_id} speed calculated: {speed_kmh:.1f} km/h")
 
-                # Draw bounding box
-                cv2.rectangle(frame, (x1, y1), (x2, y2),
-                              config['display']['box_color'], 2)
+                            # Check for speed violation and log
+                            if speed_kmh > speed_limit:
+                                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                log_violation(
+                                    track_id, speed_kmh, speed_limit, timestamp, frame_count, config)
+                                save_violation_screenshot(
+                                    frame, track_id, speed_kmh, timestamp, config)
+                                print(
+                                    f"VIOLATION: Vehicle {track_id} speeding at {speed_kmh:.1f} km/h (limit: {speed_limit} km/h)")
+
+                # Draw bounding box - use red for violations, green for normal
+                box_color = (
+                    0, 0, 255) if track_id in vehicle_speeds and vehicle_speeds[track_id] > speed_limit else config['display']['box_color']
+                cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
 
                 # Draw label with track ID and speed
                 speed_text = f" {vehicle_speeds.get(track_id, 0):.1f} km/h" if track_id in vehicle_speeds else ""
-                label = f"{class_names.get(cls, 'vehicle')} ID:{track_id}{speed_text}"
+                violation_text = " SPEEDING!" if track_id in vehicle_speeds and vehicle_speeds[
+                    track_id] > speed_limit else ""
+                label = f"{class_names.get(cls, 'vehicle')} ID:{track_id}{speed_text}{violation_text}"
                 label_size = cv2.getTextSize(
                     label, cv2.FONT_HERSHEY_SIMPLEX, config['display']['font_scale'], config['display']['font_thickness'])[0]
                 cv2.rectangle(frame, (x1, y1 - label_size[1] - 10),
-                              (x1 + label_size[0], y1), config['display']['box_color'], -1)
+                              (x1 + label_size[0], y1), box_color, -1)
                 cv2.putText(frame, label, (x1, y1 - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, config['display']['font_scale'], (0, 0, 0), config['display']['font_thickness'])
+                            cv2.FONT_HERSHEY_SIMPLEX, config['display']['font_scale'], (255, 255, 255), config['display']['font_thickness'])
 
-        # Add frame info
-        info_text = f"Frame: {frame_count}/{total_frames}"
+        # Add frame info and speed limit
+        info_text = f"Frame: {frame_count}/{total_frames} | Speed Limit: {speed_limit} km/h"
         cv2.putText(frame, info_text, (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, config['display']['info_font_scale'], (255, 255, 255), 2)
 
@@ -195,6 +263,20 @@ def main():
     # DEBUG: Print final summary
     print(f"DEBUG: Final vehicle_times: {vehicle_times}")
     print(f"DEBUG: Final vehicle_speeds: {vehicle_speeds}")
+
+    # Print violation summary
+    if config['violation_logging']['log_violations']:
+        violation_count = sum(
+            1 for speed in vehicle_speeds.values() if speed > speed_limit)
+        print(f"\nVIOLATION SUMMARY:")
+        print(f"Total vehicles tracked: {len(vehicle_speeds)}")
+        print(f"Violations detected: {violation_count}")
+        print(
+            f"Violations logged to: {config['violation_logging']['log_file']}")
+
+        if config['violation_logging']['screenshot_violations'] and violation_count > 0:
+            print(
+                f"Screenshots saved to: {config['violation_logging']['screenshot_folder']}/")
 
     # Clean up
     cap.release()
