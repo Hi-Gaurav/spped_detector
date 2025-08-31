@@ -1,6 +1,6 @@
 {
-  "model": "yolov8n.pt",
-  "confidence": 0.3,
+  "model": "yolo11m.pt",
+  "confidence": 0.5,
   "vehicle_classes": [2, 3, 5, 7],
   "class_names": {
     "2": "car",
@@ -13,5 +13,10 @@
     "font_scale": 0.6,
     "font_thickness": 2,
     "info_font_scale": 1
+  },
+  "speed_detection": {
+    "line1_position": 0.3,
+    "line2_position": 0.7,
+    "distance_meters": 10
   }
 }
